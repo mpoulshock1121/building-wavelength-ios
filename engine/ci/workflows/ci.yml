@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Type check
+        run: npx tsc --noEmit
+      - name: Lint
+        run: npm run lint
+      - name: Unit tests
+        run: npm test
+      - name: Rules index is consistent
+        run: bash scripts/check-rules-index.sh
+      - name: Role-chain gate self-test
+        run: bash scripts/test-gate.sh
+
+  # Fails loudly when its secrets are missing. A guard that cannot run is a failed
+  # guard. The only way to turn it off is the explicit repository variable
+  # DB_GUARDS=off, which is visible in settings and prints a warning on every run.
+  db-guards:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      DB_GUARDS: ${{ vars.DB_GUARDS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Explicitly disabled
+        if: ${{ env.DB_GUARDS == 'off' }}
+        run: echo "::warning::db-guards are DISABLED by repository variable DB_GUARDS=off. Database security is not being checked."
+      - name: Require secrets
+        if: ${{ env.DB_GUARDS != 'off' }}
+        run: bash scripts/ci/require-secrets.sh SUPABASE_PROJECT_REF SUPABASE_ACCESS_TOKEN SUPABASE_DB_URL
+      - uses: actions/setup-node@v4
+        if: ${{ env.DB_GUARDS != 'off' }}
+        with:
+          node-version: 22
+      - name: Security advisor gate
+        if: ${{ env.DB_GUARDS != 'off' }}
+        run: node scripts/ci/check-advisors.mjs
+      - name: Row-level security presence check
+        if: ${{ env.DB_GUARDS != 'off' }}
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f scripts/ci/check-rls.sql

@@ -1,0 +1,38 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "GATE_PHASE=prompt bash \"$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.claude/hooks/gate.sh\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit|Task|Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "GATE_PHASE=tool bash \"$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.claude/hooks/gate.sh\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "GATE_PHASE=stop bash \"$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.claude/hooks/gate.sh\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

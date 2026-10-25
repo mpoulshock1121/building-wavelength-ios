@@ -1,0 +1,60 @@
+name: testflight
+
+# Human-triggered: Actions tab > testflight > Run workflow.
+# Builds the production iOS app on EAS and submits it to TestFlight. Store
+# review submission and release timing stay human.
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "EAS build profile"
+        required: false
+        default: "production"
+
+permissions:
+  contents: read
+
+jobs:
+  testflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EAS_PROFILE: ${{ github.event.inputs.profile }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require secrets
+        run: bash scripts/ci/require-secrets.sh EXPO_TOKEN
+
+      # Release rule: never build from a branch that is behind main.
+      - name: Branch freshness
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor origin/main HEAD; then
+            echo "::error::This branch is BEHIND origin/main. Build from main with your fix merged on top."
+            git log HEAD..origin/main --oneline
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22      # current eas-cli needs Node 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test
+
+      - name: Set up EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      # Client config comes from EAS-hosted environment variables for the
+      # chosen environment (eas env:list), not from files in the repo.
+      - name: Build and submit to TestFlight
+        run: eas build --platform ios --profile "$EAS_PROFILE" --non-interactive --auto-submit
